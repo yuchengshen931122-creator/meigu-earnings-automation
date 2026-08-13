@@ -1,0 +1,94 @@
+{
+  "_comment": "美股財報自動化 — 全域設定。folder ID 由 tools/build_drive_map.py 掃描產生，不要手填名稱。",
+
+  "timezone": "Asia/Taipei",
+
+  "sheet": {
+    "spreadsheet_id": "YOUR_SPREADSHEET_ID",
+    "active_tab_gid": 0,
+    "header_row": 4,
+    "columns": {
+      "ticker": "ticker",
+      "date": "日期",
+      "time_tw": "時間（台灣）",
+      "ir_url": "con-call 官網連結",
+      "podcast_done": "Podcast",
+      "report_done": "報告",
+      "owner": "分工",
+      "industry": "產業",
+      "note": "備註"
+    },
+    "status_columns": {
+      "status": "auto_status",
+      "checked_at": "auto_checked_at",
+      "retry": "auto_retry",
+      "error": "auto_error"
+    }
+  },
+
+  "drive": {
+    "grandparent_id": "YOUR_GRANDPARENT_FOLDER_ID",
+    "word_tree_id": "YOUR_WORD_TREE_FOLDER_ID",
+    "word_tree_name": "美股財報 Word",
+    "podcast_tree_id": "YOUR_PODCAST_TREE_FOLDER_ID",
+    "podcast_tree_name": "2026Q2 美股財報podcast",
+    "_note": "podcast 樹每季新建且命名無規則，每季開季必須重跑 build_drive_map.py 並更新 podcast_tree_id。Word 樹是長期單一樹。兩棵樹的擁有者是 owner@example.com，本帳號僅為協作者。"
+  },
+
+  "memo_output": {
+    "mode": "google_doc_tab",
+    "_comment": "使用者確認：Word 樹底下每個 ticker 一份 Google Doc『{TICKER} 財報』，新季度只新增分頁，不產生新的 .docx。",
+    "doc_name_template": "{ticker} 財報",
+    "tab_name_template": "{ticker} {year}Q{q}",
+    "_tab_naming_open_issue": "現有分頁命名不一致：NVDA 2027Q1 / NVDA 2026Q4FY / NVDA 2025Q3。NVDA 是非曆年財政年度，『NVDA 2025Q3』實際日期 20251120 對應的是 NVDA FY2026 Q3。非曆年公司（NVDA/AVGO/MU/ORCL/CRM/ADBE 等）要用曆年季度還是財政季度，需定規則。預設先用曆年。",
+    "requires_podcast_url_first": true,
+    "_ordering": "分頁內容第 3 行是 podcast 連結，因此 run 內順序必須是：產 podcast → 上傳 Drive 取得連結 → 寫 memo 分頁。"
+  },
+
+  "local": {
+    "memo_dir": "C:\\path\\to\\workspace\\MEMO",
+    "podcast_dir": "C:\\path\\to\\workspace\\PODCAST",
+    "state_dir": "C:\\path\\to\\workspace\\automation\\state",
+    "secrets_dir": "",
+    "_secrets_dir": "留空＝自動用 %LOCALAPPDATA%\\meigu-automation\\secrets。若你的工作排程器讀不到那裡（沙箱 ACL 之類），改填一個絕對路徑（建議 OneDrive 之外，例如 %USERPROFILE%\\.meigu-automation\\secrets 的展開結果——這裡不支援環境變數，要填實際路徑）。原作者註：刻意放在 OneDrive 之外（不讓 refresh token 被同步到雲端），也刻意**不放在 AppData\\Local**——這台機器的 AppData\\Local 有沙箱重導向（該資料夾的 ACL 帶 AppContainer SID 與 CodexSandboxUsers），實測工作排程器啟動的進程看不到放在那裡的 token，會回報 token_missing，但同一個使用者在互動式 shell 底下卻讀得到。路徑也明確寫死，不靠 LOCALAPPDATA 環境變數。"
+  },
+
+  "readiness": {
+    "_comment": "就緒判準：新聞稿 + 逐字稿 兩項齊備才呼叫財報 agent。10-Q 不作阻塞條件。",
+    "require": ["press_release", "transcript"],
+    "poll_interval_minutes": 15,
+    "_poll_interval_minutes": "只是紀錄，程式沒有讀這個值。真正的輪距是 Windows 工作排程器裡 MeiguDispatch 的觸發器（2026-08-12 起 PT15M）。改這裡不會改變行為，兩邊要一起改。",
+    "earliest_check_after_call_minutes": 45,
+    "transcript_soft_cutoff_hours": null,
+    "give_up_after_hours": 72,
+    "_soft_cutoff_rationale": "null＝逃生門關閉：逐字稿沒確認就永不派工（使用者 2026-08-13 定案：品質優先，Q&A 必須來自真正的逐字稿，不再用新聞報導重建——之前 COHR/CSCO/CBRS 都是逾時先做，Q&A 全是重建的）。數字＝新聞稿確認後等這麼多小時仍無逐字稿就以 ready_partial 派工（舊行為，0.75 小時是當時的值）。關閉時的配套：dispatcher 在某檔等逐字稿滿 24 小時的那一輪推一次 LINE（alert key：transcript_overdue），提醒冷門股可能永遠沒有免費逐字稿，要不要放行由人決定。大盤股逐字稿多在會後 2~12 小時上線（台灣時間當天中午到傍晚），代價是產出比舊政策晚幾小時。"
+  },
+
+  "run": {
+    "run_budget_minutes": 240,
+    "_run_budget_minutes": "一輪最多花多久。只有在『剩餘預算放得下一整檔（含最壞情況的 timeout_seconds）』時才開新的一檔，所以整輪絕不超過這個數字。工作排程器的 ExecutionTimeLimit 必須大於這個值（目前 PT5H）。",
+    "max_parallel": 3,
+    "_max_parallel": "同時最多幾檔在跑（2026-08-12 起）。原本是一檔做完才做下一檔，實測 08-12 那輪四檔序列跑了 1 小時 45 分，而瓶頸全在等外部服務（claude agent 約 20 分、NotebookLM 約 7 分），排隊純屬浪費。設 1 即回到序列行為。不要設太大：claude CLI 的用量額度是全帳號共用，開越多消耗越快（08-12 早上撞過 session limit），NotebookLM 同時生成多集也會變慢。",
+
+    "max_retries": 2,
+    "_max_retries": "同一檔連續失敗幾次後放棄。未達上限就維持 memo_started（製作中），下一輪優先接手重做，不會讓別檔插隊；達到上限就解除製作中並標 gave_up 放行，之後不再自動撿起，要重來請刪掉該檔的 checkpoint。Claude 用量上限不計入次數。",
+
+    "timeout_seconds": 5400,
+    "skip_permissions": true,
+    "_skip_permissions_note": "使用者指定全面開啟。所有 claude CLI 呼叫都帶 --dangerously-skip-permissions，該次執行跳過所有工具權限確認——這是『全自動、不需要任何 approval』的必要條件，無人值守時停在權限詢問等於整條線掛掉。代價：agent 在該次執行中可以不經詢問使用其可用工具（含 Bash 與寫檔），範圍受 agent 定義的 tools 欄位限制。",
+
+    "podcast_mode": "cli",
+    "_podcast_mode": "manual = 過渡方案 B：headless CLI 沒有瀏覽器 MCP（claude mcp list 只有 Drive/Gmail/Calendar/Slack），而 earnings-memo skill 的 podcast 步驟靠 mcp__claude-in-chrome__ 操作 NotebookLM 網頁版，所以排程器只產 memo，podcast 由人在桌面 App 批次做完丟進 PODCAST/{季度}/，再由 sweep_podcasts.py 自動接手上傳。cli = 方案 A：改用 notebooklm-py CLI 無人值守產出（待驗證輸出品質是否與網頁版一致）。"
+  },
+
+  "alerts": {
+    "email_to": "you@example.com",
+    "_on": "watchdog 偵測得到、但沒列在這裡的告警會被 Alerter.send() 直接丟掉。原本只列 3 種，等於 claude CLI 掛掉、Drive 權限被撤、卡關這三件事查了也不會通知。2026-08-12 全部補上。",
+    "on": ["auth_expired", "claude_cli_down", "notebooklm_expired",
+           "drive_access_lost", "podcast_tree_stale", "line_unavailable",
+           "stuck_readiness", "run_failed_final", "no_activity_24h",
+           "authmon_stale", "transcript_overdue"],
+    "_channels": "主路徑是 LINE 私訊（推到 line.json 的 user_id，不是財報群組），因為本帳號的 OAuth 沒有 gmail.send，Gmail 只能建草稿而草稿不會推播。見 core/alerts.py。",
+    "cooldown_minutes": 180
+  }
+}

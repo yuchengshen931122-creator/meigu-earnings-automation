@@ -1,0 +1,29 @@
+# 個人設定與密鑰 —— config.json 含你的 Sheet/Drive ID,永遠不要 commit
+automation/config.json
+
+# 執行期產物
+automation/logs/
+automation/state/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# 管線產出(memo、podcast、工作檔)
+MEMO/*
+!MEMO/.gitkeep
+!MEMO/_work/
+MEMO/_work/*
+!MEMO/_work/.gitkeep
+PODCAST/*
+!PODCAST/.gitkeep
+*.docx
+*.m4a
+*.xlsx
+
+# 本機 Claude 設定(權限白名單等個人設定)
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
+skill-observations/
+
+# 發佈輔助腳本(僅本機使用)
+/publish_to_github.ps1
