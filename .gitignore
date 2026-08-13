@@ -27,3 +27,4 @@ skill-observations/
 
 # 發佈輔助腳本(僅本機使用)
 /publish_to_github.ps1
+config.colleagues.json

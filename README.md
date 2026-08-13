@@ -51,11 +51,15 @@ copy automation\config.example.json automation\config.json
 **你一定要換成自己的**才跑得起來。完整清單與每一項的解法在
 **[SETUP.md](SETUP.md)**,摘要如下:
 
+> **原團隊成員**:追蹤表、Drive 樹、OAuth client 都**直接重用共用的那一份**,
+> 不用自建 —— 跟作者拿 `config.colleagues.json`(私下傳,不在本 repo),
+> 照 SETUP 各節開頭的「原團隊成員」框走即可。下表是給外部使用者的。
+
 | # | 項目 | 原作環境 | 你需要做的 |
 |---|---|---|---|
-| 1 | Google OAuth client | 作者自建的 Cloud 專案 | 自建專案啟用 Drive/Sheets/Docs API,下載 `client_secret.json`(見 SETUP §1) |
-| 2 | 追蹤表 Google Sheet | 團隊共用表,特定欄位名 | 建自己的表,`spreadsheet_id` 與欄名對映填進 `config.json`(SETUP §2) |
-| 3 | Drive 資料夾樹 | 別人擁有、作者是協作者 | 換成你自己的資料夾 ID(自己擁有更單純)(SETUP §3) |
+| 1 | Google OAuth client | 作者自建的 Cloud 專案 | 自建專案啟用 Drive/Sheets/Docs API,下載 `client_secret.json`(見 SETUP §1);**團隊成員**:共用作者那份 |
+| 2 | 追蹤表 Google Sheet | 團隊共用表,特定欄位名 | 建自己的表,`spreadsheet_id` 與欄名對映填進 `config.json`(SETUP §2);**團隊成員**:重用共用表 |
+| 3 | Drive 資料夾樹 | 別人擁有、作者是協作者 | 換成你自己的資料夾 ID(自己擁有更單純)(SETUP §3);**團隊成員**:重用共用樹 |
 | 4 | claude CLI + skill | 已登入、skill 已安裝 | `npm i -g @anthropic-ai/claude-code`、登入、把 `skills/` 複製到 `~/.claude/skills/`(SETUP §4) |
 | 5 | NotebookLM(podcast) | notebooklm-py 已授權 | `pip install notebooklm-py[headless]` + 登入(SETUP §5);不要 podcast 也能跑 |
 | 6 | LINE 推播(選用) | 作者的官方帳號 + 群組 | 建自己的 LINE OA + Messaging API channel(SETUP §6);不設定只是不推播 |

@@ -5,6 +5,10 @@
 
 > 執行順序建議:§7(SEC UA,兩分鐘)→ §1–§3(Google 側)→ §4(claude)
 > → §8(路徑)→ 手動試跑 → §5、§6(podcast 與 LINE,皆可後補)→ §9(排程)。
+>
+> **原團隊成員的捷徑**:跟作者拿 `config.colleagues.json` → §8 改名與改路徑
+> → §7 改 email → §1 只做「拿 client_secret.json + setup_oauth.py」→ §4 →
+> 完成。§2、§3 整節跳過(共用資源直接重用),§9 先讀「多機警告」再決定要不要開排程。
 
 ---
 
@@ -22,6 +26,11 @@
 4. `python automation/tools/setup_oauth.py` 走一次瀏覽器授權。
 5. `python automation/tools/verify_infra.py` 驗收(唯讀,安全)。
 
+> **原團隊成員**:`client_secret.json` 可以直接跟作者拿同一份(私下傳),
+> 不必自建 Cloud 專案 —— 每個人仍是用**自己的** Google 帳號跑
+> `setup_oauth.py` 授權,產生自己的 token。前提:你的帳號已被加進
+> 追蹤表與兩棵樹的共享名單(見 §2、§3)。
+
 **secrets 目錄在哪**:`config.json` 的 `local.secrets_dir` 留空 =
 `%LOCALAPPDATA%\meigu-automation\secrets`。若你的工作排程器讀不到那裡
 (作者踩過 AppData 沙箱 ACL 重導向的坑),就填一個 OneDrive **之外**的絕對路徑。
@@ -33,10 +42,16 @@
 
 ## §2 追蹤表 Google Sheet(必要)
 
-**原作環境**:一張 5 人共用的追蹤表,一季一個分頁,表頭在第 4 列,
+**原作環境**:一張團隊共用的追蹤表,一季一個分頁,表頭在第 4 列,
 欄名是中文(`ticker`、`日期`、`時間(台灣)`、`Podcast`、`報告`⋯⋯)。
 
-**你要做的**:
+> **原團隊成員:這一節不用做。** 追蹤表就是我們正在用的那一張,直接重用。
+> 跟作者拿 `config.colleagues.json`(私下傳,不在這個公開 repo 裡),
+> 裡面 `spreadsheet_id`、`active_tab_gid`、欄名對映都已填好;
+> 你只要確認**自己的 Google 帳號**在那張表的共享名單裡(可編輯)。
+> 換季分頁換 gid 時,大家跟著作者的 config 更新即可。
+
+**外部使用者你要做的**:
 
 1. 建一張自己的 Google Sheet,一列一檔股票。最少要有:代號、日期、時間、
    Podcast 勾選框、報告勾選框、產業 這幾欄。
@@ -57,7 +72,13 @@
 `{季度} 美股財報podcast`(每季新建)。這也是整個系統用 OAuth 而非
 service account 的原因。
 
-**你要做的**:
+> **原團隊成員:這一節也不用做。** 兩棵樹就是團隊共用那兩棵,
+> `config.colleagues.json` 已填好三個 folder ID。你只要:
+> ① 確認自己的帳號被樹的擁有者加為協作者(可編輯)
+> ② 拿到 config 後跑一次 `python automation/tools/build_drive_map.py`
+> 產生自己本機的 ticker 對照表。每季換 podcast 樹是自動偵測的,不用手動。
+
+**外部使用者你要做的**:
 
 1. 在自己的 Drive 建兩個資料夾(自己擁有,一切更單純):
    - Word 樹:底下依產業分類,每分類底下每 ticker 一個資料夾
@@ -145,6 +166,8 @@ memo 分頁照樣會寫,只是少 podcast 連結。
 
 1. `copy automation\config.example.json automation\config.json`
    (`config.json` 已在 .gitignore,你的 ID 不會被 commit)。
+   **原團隊成員**:改用作者私下給的 `config.colleagues.json` 改名成
+   `config.json` —— 共用表與兩棵樹的 ID 已填好,只剩下面 2、4 兩步要改。
 2. `local.memo_dir` / `local.podcast_dir` / `local.state_dir` 填你 clone
    位置底下的 `MEMO`、`PODCAST`、`automation\state` 絕對路徑。
 3. 文件與 skill 裡的 `{專案根目錄}` 一律指「你 clone 下來的 repo 根目錄」。
@@ -174,6 +197,16 @@ memo 分頁照樣會寫,只是少 podcast 連結。
 ExecutionTimeLimit 給 Dispatch 至少 5 小時。
 
 **機器前提**:24/7 接電、AC 永不休眠、保持登入。
+
+> **原團隊成員(多機警告)**:大家共用同一張表與同一棵樹時,
+> **Dispatch / Sweep / Backfill / Dates 這四個排程同一時間只該有一台機器在跑**
+> (現況是作者的機器)。表上的 `auto_status` 擋得掉大部分重複派工,
+> 但 7 階段檢查點是**本機**檔案 —— 兩台機器同時跑會互相看不到對方進度,
+> 可能重做已完成的步驟或重複推播。同事的正確用法:
+> ① 平常只裝工具,手動跑 `status.py` 看進度、跑 `publish_memo.py` 補歸檔;
+> ② 作者的機器要停機時,再由**一位**同事接手開排程,交接時把
+> `automation/state/` 整個資料夾一併複製過去。
+> LINE 推播同理:同一個官方帳號的額度是共用的,推播排程只留一台機器開。
 
 **非 Windows**:.bat 換成 cron + shell script 即可,Python 端大多可攜,
 但路徑處理與 `%USERPROFILE%` 假設需要自行修,未在 macOS/Linux 實測過。
