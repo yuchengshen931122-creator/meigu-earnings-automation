@@ -12,7 +12,19 @@ import time
 import urllib.error
 import urllib.request
 
-SEC_UA = "meigu-automation you@example.com"  # ←務必改成你的真實 email：SEC 要求可識別、可聯絡的 UA，否則會被封 IP
+SEC_UA = "meigu-automation you@example.com"  # 後備值；正常情況下由 config.json 的 sec_contact_email 覆蓋（見下）
+
+# SEC 要求可識別、可聯絡的 UA，否則會被封 IP。email 從 config.json 的
+# sec_contact_email 讀（setup 腳本會幫你填），這裡只是後備。
+try:
+    from pathlib import Path as _Path
+    _email = json.loads(
+        (_Path(__file__).resolve().parent.parent / "config.json").read_text(encoding="utf-8")
+    ).get("sec_contact_email", "")
+    if _email and "@" in _email and "example.com" not in _email:
+        SEC_UA = f"meigu-automation {_email}"
+except Exception:
+    pass  # config 還沒建好時照用後備值；SEC 相關工具跑起來前 setup 就會把它填上
 BROWSER_UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/120.0 Safari/537.36"

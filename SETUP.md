@@ -154,13 +154,13 @@ memo 分頁照樣會寫,只是少 podcast 連結。
 網址上且長期有效。系統只會公開你自己 My Drive 底下專用資料夾裡的檔案,
 `python automation/tools/line_public.py list / revoke` 可隨時稽核與收回。
 
-## §7 SEC User-Agent(必要,兩分鐘)
+## §7 SEC User-Agent(必要,一分鐘)
 
-**原作環境**:`automation/core/net.py` 的 `SEC_UA` 帶作者 email。
+**原作環境**:SEC EDGAR 的 User-Agent 帶作者 email。
 
-**你要做的**:把 `SEC_UA = "meigu-automation you@example.com"` 改成
-**你的真實 email**。SEC 明文要求可識別、可聯絡的 UA,匿名 UA 會被封 IP
-—— 無人值守下被封是災難。速率限制(≤10 req/s)程式已寫死,不用動。
+**你要做的**:在 `config.json` 填 `sec_contact_email` 為**你的真實 email**
+(`core/net.py` 會自動採用)。SEC 明文要求可識別、可聯絡的 UA,匿名 UA
+會被封 IP —— 無人值守下被封是災難。速率限制(≤10 req/s)程式已寫死,不用動。
 
 ## §8 本機路徑與 config(必要)
 

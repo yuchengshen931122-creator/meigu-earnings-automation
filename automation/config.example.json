@@ -3,6 +3,9 @@
 
   "timezone": "Asia/Taipei",
 
+  "sec_contact_email": "you@example.com",
+  "_sec_contact_email": "抓 SEC EDGAR 用的 User-Agent 聯絡信箱。SEC 明文要求可識別、可聯絡，匿名 UA 會被封 IP。填你的真實 email。",
+
   "sheet": {
     "spreadsheet_id": "YOUR_SPREADSHEET_ID",
     "active_tab_gid": 0,
