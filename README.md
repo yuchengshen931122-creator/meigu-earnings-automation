@@ -20,7 +20,7 @@ publish_memo.py → podcast 上傳 Drive、Google Doc 開新分頁寫入 memo
 追蹤表打勾 + LINE 群組推播(文字摘要 + 可直接播放的語音訊息)
 ```
 
-支撐這條線的還有:7 個 Windows 排程任務、7 階段檢查點(斷電可續跑)、
+支撐這條線的還有:7 個 Windows 排程任務、多階段檢查點(斷電可續跑)、
 授權即時監控與自動修復(Google OAuth / NotebookLM / claude CLI / LINE)、
 LINE 私訊告警、以及一個本機即時看板。
 
@@ -35,7 +35,7 @@ OAuth 測試模式的 7 天地雷⋯⋯),強烈建議先讀。
 | `automation/` | 整條管線的程式:`core/`(API 封裝)、`tools/`(排程進入點)、`run/`(排程 .bat)、`tests/` |
 | `automation/config.example.json` | 設定範本 → 複製成 `config.json` 後填入你自己的值 |
 | `skills/earnings-memo-auto/` | 產 memo 的 Claude skill(嚴格的輸出格式定義)→ 安裝到 `~/.claude/skills/` |
-| `.claude/agents/` | 兩個具名 agent:財報日期查證員、memo 產出員 |
+| `.claude/agents/` | 三個具名 agent:財報日期查證員、memo 產出員、memo 逐數字驗證員 |
 | `MEMO/`、`PODCAST/` | 產出落地目錄(空,由管線填入) |
 
 ## 快速開始
@@ -63,7 +63,7 @@ copy automation\config.example.json automation\config.json
 | 4 | claude CLI + skill | 已登入、skill 已安裝 | `npm i -g @anthropic-ai/claude-code`、登入、把 `skills/` 複製到 `~/.claude/skills/`(SETUP §4) |
 | 5 | NotebookLM(podcast) | notebooklm-py 已授權 | `pip install notebooklm-py[headless]` + 登入(SETUP §5);不要 podcast 也能跑 |
 | 6 | LINE 推播(選用) | 作者的官方帳號 + 群組 | 建自己的 LINE OA + Messaging API channel(SETUP §6);不設定只是不推播 |
-| 7 | SEC User-Agent | 作者的 email | **必改** `automation/core/net.py` 的 `SEC_UA`,SEC 要求真實聯絡方式 (SETUP §7) |
+| 7 | SEC User-Agent | 作者的 email | **必填** `config.json` 的 `sec_contact_email`(真實信箱,SEC 要求)(SETUP §7) |
 | 8 | 本機路徑 | 作者的資料夾 | `config.json` 的 `local.*` 填你的路徑;文件中 `{專案根目錄}` = 你 clone 下來的位置(SETUP §8) |
 | 9 | Windows 排程 | 作者機器上的 7 個排程 | 用 `automation/run/*.bat` 自行註冊排程(SETUP §9);非 Windows 需自行移植 |
 | 10 | 語言與格式慣例 | 繁中 memo、團隊範本 | 想改語言/格式 → 改 skill 與 `core/docs_client.py`(SETUP §10) |

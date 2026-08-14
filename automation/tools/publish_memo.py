@@ -325,6 +325,42 @@ def main() -> int:
             f"不猜要寫哪一份，請先人工合併。"
         )
     if not doc:
+        # 名稱找不到 ≠ 檔案不存在：落點資料夾裡以 ticker 開頭的 Google Doc，
+        # 就是名稱不合慣例的既有財報檔（名稱比對再怎麼放寬都可能漏接變體；
+        # 2026-08-14 AMAT 因此被建了第二份，memo 寫進沒人看的那份）。
+        # 使用者定調（2026-08-14，以 AEHR 2026Q3FY 為例）：恰好一份就直接採用 ——
+        # 改名成『{TICKER} 財報』後在裡面加分頁，不另建新檔。多份才中止，
+        # 因為不知道該用哪一份。
+        suspects = [
+            f for f in drive.list_children(word_folder)
+            if f.get("mimeType") == "application/vnd.google-apps.document"
+            and f["name"].upper().startswith(ticker)
+            and (len(f["name"]) == len(ticker) or not f["name"][len(ticker)].isalnum())
+        ]
+        if len(suspects) > 1:
+            raise PublishError(
+                f"Drive 上找不到『{ticker} {MEMO_DOC_SUFFIX}』，落點資料夾裡卻有多份"
+                f"以 {ticker} 開頭的文件：" + "、".join(f"『{f['name']}』({f['id']})" for f in suspects[:5])
+                + f"。不猜要用哪一份 —— 請人工合併或把正確那份改名成"
+                f"『{ticker} {MEMO_DOC_SUFFIX}』再重跑。"
+            )
+        if suspects:
+            adopted = suspects[0]
+            old_name = adopted["name"]
+            drive._retry(lambda: drive.svc.files().update(
+                fileId=adopted["id"],
+                body={"name": f"{ticker} {MEMO_DOC_SUFFIX}"},
+                fields="id, name",
+                supportsAllDrives=True,
+            ).execute())
+            # 原檔名（多半是季度標籤）降格後，唯一那個還掛預設標題的分頁
+            # 冠回原檔名，該季在分頁清單上才認得出來
+            tabs = docs.list_tabs(adopted["id"])
+            if len(tabs) == 1 and (tabs[0]["title"] or "").strip().lower() in ("tab 1", "分頁 1"):
+                docs.rename_tab(adopted["id"], tabs[0]["tabId"], old_name)
+            doc = {"id": adopted["id"], "name": f"{ticker} {MEMO_DOC_SUFFIX}"}
+            print(f"   採用既有文件『{old_name}』{doc['id']} → 改名『{doc['name']}』")
+    if not doc:
         created = drive.svc.files().create(
             body={
                 "name": f"{ticker} {MEMO_DOC_SUFFIX}",

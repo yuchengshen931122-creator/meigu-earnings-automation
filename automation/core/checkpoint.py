@@ -29,6 +29,7 @@ STAGES = [
     ("readiness", "資料已就緒", "新聞稿 + 逐字稿"),
     ("memo_started", "開始製作 memo", "dispatcher 開工標記；同時只允許一檔"),
     ("memo_built", "memo 已產出", "earnings-memo skill → JSON + .docx"),
+    ("memo_verified", "memo 已驗證", "clean-context 逐數字回源；掛載錯誤已修正"),
     ("podcast_built", "podcast 已產出", "NotebookLM → .m4a"),
     ("podcast_uploaded", "podcast 已上傳", "Drive；產出 url 供分頁引用"),
     ("memo_tab_written", "memo 分頁已寫入", "Google Doc 新分頁"),

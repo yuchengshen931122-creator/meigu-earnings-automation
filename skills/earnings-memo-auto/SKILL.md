@@ -614,15 +614,83 @@ not just distorted but genuinely never available), skip the "secondary P/E" figu
 rather than reporting an N/A line with a full sentence of explanation — a short parenthetical
 (`"current/forward P/E 因連年虧損無意義"`) is enough.
 
-## Step 4: sanity-check before saving
+## Step 4: 逐數字回源驗證（硬性關卡——通過前不得執行 build_memo.py）
 
-Before running the build script, re-read your own JSON against the source documents once:
-- Does every number in `sections` actually trace back to the press release, 10-Q/8-K, deck, or
-  transcript you fetched? Flag (don't silently fix) anything you had to estimate.
-- Does the TL;DR actually match the detail in the sections below it (no contradicting figures)?
-- Does every number in the `dashboard` tables match the number written out later in `sections`
-  exactly (same check, extended to the dashboard)?
-- Are all 7 sections present, even if some lines say `來源資料未說明`?
+一次生成的長文摘要，「數字本身正確、但掛載錯誤」是**預期行為而不是意外**：數值記得住，
+它掛在哪個主詞/期間/口徑上是壓縮時最先斷的環節；而寫錯與寫對的行文流暢度完全相同，
+所以「重讀一遍看順不順」抓不到任何一類這種錯。驗證必須是逐條回源比對，不是自我審查。
+
+寫完 JSON 後，逐條處理裡面**每一個數字、專有名詞、因果歸因**（tldr、dashboard、
+sections 一～七全部），對每一條核對五個綁定，並把結果寫進
+`{專案根目錄}\MEMO\_work\{ticker小寫}_{季度小寫}_check.md`：
+
+| 綁定 | 要核對什麼（每一項都對應 2026-08-13 CSCO/Cerebras 兩份 memo 的真實翻車案例） |
+|---|---|
+| 數值+單位 | 75,000「個」800G 模組 ≠「75,800 Gbps」——兩個相鄰 token 融接成一個假數字假單位 |
+| 主詞 | +95% 是「服務供應商＋雲端」客戶別合計，不是電信商；8,600+ 是 Cisco IQ 的客戶數，不是 RIS |
+| 期間 | 280+ 是 Q4 單季、1,000+ 才是全年；35.5-36.5% 是 Q1 指引、全年隱含約 35%；「累計至今出貨」≠「本季出貨」 |
+| 口徑 | 地理別 +18% 是營收、+44% 是產品訂單，差一倍以上；ARR/訂閱占比是季末時點數，不是全年數 |
+| 歸因 | 原因用公司自己的字眼：逐字稿說 memory cost 就寫記憶體成本，不得代換成更有名的敘事（如關稅） |
+
+check 檔每條的格式：`[狀態] memo 寫法 → 來源原文片段（英文原句，不是你的轉述）`。
+**貼不出原文片段的條目就是未通過**——「貼出原文」這個動作本身就是驗證，它強迫你回到
+來源文字而不是回到自己的記憶（記憶裡的版本就是當初寫錯的版本）。狀態三選一：
+
+- `相符` — 五個綁定全對。
+- `已修正` — 任一綁定錯了：回頭改 JSON，把修正後的寫法記在這條。`已修正 > 0` 是
+  正常狀態不是失敗——驗證站存在的目的就是接住這些。
+- `無法核對(外部：{來源})` — 只允許出現在本來就不出自逐字稿/新聞稿的資料
+  （市場共識、目標價、歷史 P/E 區間、股價），必須註明實際來源。**逐字稿章節
+  （tldr 的 Q&A 點、三、五、七、dashboard 焦點表）不允許有無法核對的條目**——
+  找不到原文就刪掉或降級改寫。外部來源可抓取時應回源核對後改標
+  `相符(外部：{來源})`；真的抓不到才留無法核對——**外部 ≠ 免驗**。
+
+驗證時同步套用這八條（每條都來自真實錯誤，不是假設性防範）：
+
+1. **來源隔離**：「管理層表示／法說會內容」語境只能出自本次逐字稿。WebSearch 撈到的
+   新聞（尤其幾個月前的舊聞）不得混進管理層語境——CSCO memo 的「關稅漲價」就是舊新聞
+   敘事滲染，逐字稿全篇沒有 tariff 一字，公司明講原因是記憶體成本。另注意**機器轉錄
+   逐字稿的「數量＋規格」壓縮陷阱**（"850,400 gig" 實為 850,000 個 400G、"75,800 gig"
+   實為 75,000 個 800G）——怪異的數字＋單位組合必須回新聞稿或第二來源核對。
+2. **先驗知識禁令**：來源沒出現的競品型號（B200）、效能數字（750 tokens/sec）、
+   比較對象，無論多合理都不得出現。逐字稿說「Helios 優於 355s」就寫 MI355X
+   （AMD 自家前一代），不升級成「優於 NVIDIA」。
+3. **限定句是一級事實，跟著數字走**：excludes / not including / cumulative since /
+   "we haven't done X yet" 這類限定，數字走到哪（tldr、dashboard、內文）它跟到哪。
+   例：RPO $25B「不含 AWS 或任何 hyperscaler 訂單」；「NVIDIA 存量 GPU 我們還沒做過」。
+   壓縮時模型會把數字視為高價值、限定句視為低價值——對投資判讀恰好相反。
+4. **禁止縫合**：來源分開講的兩件事不得合併成一個宣稱。「Q2 簽 6 筆 >$30M」與
+   「新客戶名單 Figma/Cognition/…」在逐字稿是兩段話，不得寫成「6 筆大單（Figma、
+   Cognition 等）」。要並列就照來源的分法寫成兩句。
+5. **內部算術自檢**：分項加總＝合計（16.59+15.02=31.61 就不能寫 32.0）；可推導值
+   驗算一次（回購金額 ÷ 均價 ＝ 股數）；dashboard 與 sections 數字逐一相同；
+   tldr 與內文不互相矛盾；7 個 section 齊全。
+6. **稿內矛盾**：準備稿與 Q&A 數字打架時（1,500+ vs 1,600），以準備稿為準、
+   括號註記 Q&A 說法。
+7. **術語**：技術名詞先查 [references/glossary.md](references/glossary.md)；不在表上的，
+   中譯後**首次出現必附英文原文括號**（`分離式推論 (disaggregated inference)`——
+   「非結構化推理」這個錯譯就是因為沒帶原文，全篇 15 處無人能發現），並把新詞補進
+   glossary。
+8. **反向掃描抓遺漏**：memo→來源方向驗完後，反過來把準備稿再掃一次：每個數字、
+   每個新產品/路線圖宣告（CS4/CS5 這種等級）、每個總體口徑（如「產品訂單 +35%、
+   排除超大規模 +25%」），要嘛在 memo 裡、要嘛列進 check 檔末尾的「未收錄」清單。
+   逐條驗證只能抓「寫錯的」，抓不到「沒寫的」——本季最重要的訂單口徑曾整個消失，
+   靠的就是這一步。
+9. **衍生數必須重算，不得以「外部」豁免**：TTM＝近四季逐季相加、FY 估算＝已公布各季＋
+   指引中值——各季數字回**各季自己的新聞稿**核對（公司 IR／GlobeNewswire 都抓得到）；
+   並跑恆等式 `FY估算 − TTM ＝ Q4指引中值 − 去年同季實際`，兩邊對不上＝其中一個合成數
+   必錯（AMAT 曾寫 13.0−11.5=1.5 但 4.02−2.17=1.85，兩者不可能同時對）。統計網站的
+   「EPS (ttm)」是 GAAP 稀釋口徑——標成 non-GAAP 前必先驗口徑（AMAT 曾把 GAAP TTM 11.6
+   標成 non-GAAP TTM 11.5，current P/E 少算 2 倍多）；P/E 分母口徑要與標籤及歷史區間
+   口徑一致。
+10. **評級/目標價用彙整頁＋標擷取日**：優先 `stockanalysis.com/stocks/{ticker}/forecast/`
+    （含分析師人數與買賣分佈）；marketbeat instant-alert 這類單一新聞頁不得作為評級唯一
+    依據（曾據其把正確的 Strong Buy 改成錯的 Moderate Buy——單一劣質來源的「修正」比
+    不修正更危險）。外部 ≠ 免驗：來源可抓取就抓來核對後標 `相符(外部：{來源})`，
+    真的抓不到才准標 `無法核對(外部)`。
+
+check 檔開頭寫統計行：`相符 N／已修正 N／無法核對 N／未收錄 N`。全部條目處理完、
+JSON 修正完，才執行 build_memo.py。
 
 ## Step 5: after generating
 
@@ -639,7 +707,8 @@ python scripts/log_run.py --ticker VZ --quarter 1Q26 --status "完成" --notes "
 
 Use `--status "部分完成(缺逐字稿Q&A)"` (or similar) and put the specifics in `--notes` whenever
 Step 4 turned up a gap — the log should surface the same caveats you'd say in chat, not a
-sanitized "完成" that hides them. This writes to `{專案根目錄}\MEMO\_generated_log.md` by default, newest
+sanitized "完成" that hides them. `--notes` always leads with Step 4's verification stats line
+(`驗證：相符 N／已修正 N／無法核對 N／未收錄 N`) before any other caveats. This writes to `{專案根目錄}\MEMO\_generated_log.md` by default, newest
 run on top.
 
 **Do not stop here — continue straight to Step 6 (podcast) for the same ticker/quarter.** The

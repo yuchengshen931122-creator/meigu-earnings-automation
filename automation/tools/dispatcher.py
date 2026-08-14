@@ -423,6 +423,8 @@ def main() -> int:
 
 
 MEMO_AGENT = "earnings-memo-runner"
+VERIFY_AGENT = "earnings-memo-verifier"
+BUILD_MEMO = r"%USERPROFILE%\.claude\skills\earnings-memo-auto\scripts\build_memo.py"
 PROJECT_DIR = str(Path(__file__).resolve().parent.parent.parent)
 
 # Claude 用量上限：agent 兩三秒就 rc=1 退出，訊息長這樣
@@ -592,6 +594,134 @@ def _execute(cfg: dict, job: Job, sheets) -> None:
         print(f"    memo 產出確認：{json_path.name if json_path.exists() else docx_path.name}"
               + (f"　缺漏 {gaps}" if gaps else ""))
         finish(ST_RUNNING)   # 心跳：memo 已產出，還在跑 podcast/歸檔
+
+    # ---- 2.4 驗證關卡：獨立 clean-context 逐數字回源，通過才准往下 ----
+    # 2026-08-13 起。同 context 的自我檢查抓不到「數字對、掛載錯」——寫錯的那個
+    # context 會再次認可自己的錯（CSCO/CBRS 人工抽查出七類系統性錯誤，Step 4
+    # 自我重讀全數漏接）。改由另一個乾淨 context 的 agent 拿逐字稿逐條比對，
+    # 錯的直接修 JSON 並重建 docx。必須排在 podcast 之前：podcast 的 focus
+    # prompt 來自 JSON 的 tldr，驗證後的 JSON 才能餵給它。
+    verify_mode = cfg.get("run", {}).get("verify_mode", "gate")
+    if verify_mode != "off" and not ck.is_done("memo_verified"):
+        vd = ck.detail("memo_verified")
+        if vd.get("gave_up"):
+            finish(ST_FAILED, f"驗證重試已達上限，需人工處理：{(vd.get('error') or '')[:200]}")
+            return
+        v_att = int(vd.get("attempts") or 0) + 1
+        check_path = json_path.with_name(json_path.stem + "_check.md")
+        # 靜態預檢（純程式）：發現的問題塞進 verifier 的派工單，讓它一併修。
+        import verify_memo_static as vms
+        pre_hard, pre_warn = vms.check(json_path, docx_path, check_path)
+        for w in (pre_hard + pre_warn)[:6]:
+            print(f"      [靜態預檢] {w}")
+        static_note = ""
+        if pre_hard or pre_warn:
+            static_note = ("靜態檢查發現以下問題，請一併處理：\n  - "
+                           + "\n  - ".join(pre_hard + pre_warn) + "\n")
+        vprompt = (
+            f"標的：{job.ticker}  分頁季度：{job.tab_name.split(' ', 1)[-1]}\n"
+            f"memo JSON：{json_path}\n"
+            f"memo docx：{docx_path}\n"
+            f"驗證檔輸出：{check_path}\n"
+            f"來源線索：\n  新聞稿：{job.press_release}\n  逐字稿：{job.transcript or '未確認，請自行取得'}\n"
+            f"docx 重建指令：python \"{BUILD_MEMO}\" \"{json_path}\" \"{docx_path}\"\n"
+            + static_note
+        )
+        vcmd = ["claude", "--agent", VERIFY_AGENT, "-p", vprompt]
+        if cfg.get("run", {}).get("skip_permissions"):
+            vcmd.append("--dangerously-skip-permissions")
+        print(f"    驗證關卡（clean-context 逐數字回源，第 {v_att} 次）…")
+        journal(cfg, {"ticker": job.ticker, "event": "verify_start", "attempt": v_att})
+        finish(ST_RUNNING)
+        try:
+            vp = subprocess.run(vcmd, capture_output=True, text=True, cwd=PROJECT_DIR,
+                                encoding="utf-8", errors="replace", env=cli_env(),
+                                timeout=cfg["run"].get("verify_timeout_seconds", 2700))
+        except subprocess.TimeoutExpired:
+            journal(cfg, {"ticker": job.ticker, "event": "verify_timeout", "attempt": v_att})
+            ck.mark("memo_verified", done=False, attempts=v_att, error="驗證 agent 逾時")
+            finish(ST_FAILED, f"驗證 agent 逾時（第 {v_att} 次，下一輪重試）", retry=v_att)
+            return
+        vout = vp.stdout or ""
+        vres = _parse_agent_json(vout)
+        journal(cfg, {"ticker": job.ticker, "event": "verify_done", "rc": vp.returncode,
+                      "ok": vres.get("ok"), "tail": vout[-600:]})
+        if vp.returncode != 0 and QUOTA.search(f"{vout}\n{vp.stderr or ''}"):
+            m = RESET_AT.search(f"{vout}\n{vp.stderr or ''}")
+            when = f"，額度恢復時間 {m.group(1).strip()}" if m else ""
+            print(f"    [!] Claude 用量上限（驗證階段）{when} —— 不算失敗，維持 waiting")
+            # 不計入重試次數：配額跟這一檔的品質無關（同 memo 階段的處理）。
+            ck.mark("memo_verified", done=False, attempts=v_att - 1, quota_blocked=True)
+            finish(ST_WAITING, f"Claude 用量上限（驗證階段）{when}；恢復後自動重跑")
+            raise QuotaExhausted(when.lstrip("，") or "額度恢復時間不明")
+        # 靜態後檢（硬性）：verifier 說 ok 也要過這關 —— 例如它改了 JSON 卻忘了
+        # 重建 docx、或沒寫驗證檔，模型騙不過確定性檢查。
+        post_hard: list[str] = []
+        if vp.returncode == 0 and vres.get("ok"):
+            post_hard, _ = vms.check(json_path, docx_path, check_path)
+            for h in post_hard:
+                print(f"      [靜態後檢·FAIL] {h}")
+
+        # ---- 多重獨立覆核（verify_passes > 1 時）----
+        # 每一輪都是全新 context 的 verifier 重驗上一輪的產物，全數通過才放行。
+        # 錯誤率按輪數相乘下降；代價是 Claude 用量按倍數增加，由 config 決定。
+        # 注意：第 2 輪之後的配額耗盡走一般失敗路徑（計一次 attempt，下一輪重試），
+        # 不走 QuotaExhausted 快停 —— 罕見情境，重試語意仍正確。
+        passes = max(1, int(cfg["run"].get("verify_passes", 1)))
+        fixed_total = int(vres.get("fixed") or 0) if vres.get("ok") else 0
+        vpass_done = 1
+        while (vpass_done < passes and vp.returncode == 0 and vres.get("ok")
+               and not post_hard):
+            vpass_done += 1
+            print(f"    多重覆核：第 {vpass_done}/{passes} 輪（獨立 context 重驗）…")
+            finish(ST_RUNNING)
+            try:
+                vp = subprocess.run(vcmd, capture_output=True, text=True, cwd=PROJECT_DIR,
+                                    encoding="utf-8", errors="replace", env=cli_env(),
+                                    timeout=cfg["run"].get("verify_timeout_seconds", 2700))
+            except subprocess.TimeoutExpired:
+                ck.mark("memo_verified", done=False, attempts=v_att,
+                        error=f"第 {vpass_done} 輪覆核逾時")
+                finish(ST_FAILED, f"第 {vpass_done} 輪覆核逾時（下一輪重試）", retry=v_att)
+                return
+            vres = _parse_agent_json(vp.stdout or "")
+            post_hard = []
+            if vp.returncode == 0 and vres.get("ok"):
+                post_hard, _ = vms.check(json_path, docx_path, check_path)
+                fixed_total += int(vres.get("fixed") or 0)
+            journal(cfg, {"ticker": job.ticker, "event": "verify_pass",
+                          "n": vpass_done, "rc": vp.returncode, "ok": vres.get("ok")})
+
+        if vp.returncode == 0 and vres.get("ok") and not post_hard:
+            ck.mark("memo_verified", attempts=v_att, passes=vpass_done,
+                    fixed=fixed_total, unverifiable=vres.get("unverifiable"),
+                    missing_added=vres.get("missing_added"),
+                    check=str(vres.get("check_path") or check_path))
+            print(f"    驗證通過（{vpass_done} 輪）：累計修正 {fixed_total} 條"
+                  f"／無法核對 {vres.get('unverifiable', '?')} 條"
+                  f"／補遺漏 {vres.get('missing_added', '?')} 條")
+        else:
+            msg = ("驗證未通過："
+                   + ("；".join(post_hard)
+                      or "；".join(vres.get("issues") or [])
+                      or f"rc={vp.returncode} {(vp.stderr or vout)[-200:]}")[:250])
+            if verify_mode == "warn":
+                print(f"    [!] {msg}（verify_mode=warn，放行不擋）")
+                ck.mark("memo_verified", attempts=v_att, waived=True, error=msg[:200])
+            else:
+                if v_att >= int(cfg["run"].get("max_retries", 2)):
+                    # fail-closed 的終點：不 gave_up 整條線（memo 本身可能沒問題），
+                    # 只把驗證標成放棄並停在 failed，等人工判斷。要重來：刪 checkpoint
+                    # 的 memo_verified 階段或整檔 checkpoint。
+                    ck.mark("memo_verified", done=False, attempts=v_att,
+                            gave_up=True, error=msg[:300])
+                    print(f"    [X] {msg}（第 {v_att} 次，達上限，停下等人工）")
+                    finish(ST_FAILED, f"{msg}（驗證重試 {v_att} 次後停止，需人工）", retry=v_att)
+                else:
+                    ck.mark("memo_verified", done=False, attempts=v_att, error=msg[:300])
+                    print(f"    [X] {msg}（第 {v_att} 次，下一輪重試）")
+                    finish(ST_FAILED, msg, retry=v_att)
+                return
 
     # ---- 2.5 podcast（方案 A：notebooklm CLI）----
     # 就緒偵測已經抓到新聞稿與逐字稿的網址，正好是 NotebookLM 能伺服器端抓取的

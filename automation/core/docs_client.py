@@ -22,6 +22,8 @@ API 能力已實測確認（查 Docs v1 discovery document，非憑記憶）：
 
 from __future__ import annotations
 
+import re
+
 from googleapiclient.discovery import build
 
 from core import docx_to_docs
@@ -34,6 +36,11 @@ def _u16(s: str) -> int:
     return len(s.encode("utf-16-le")) // 2
 
 
+def _norm_name(s: str) -> str:
+    """檔名正規化：所有空白（含全形空格、NBSP、tab）折成一個半形空格，去頭尾。"""
+    return re.sub(r"\s+", " ", s).strip()
+
+
 class DocsClient:
     def __init__(self, creds, drive_client):
         self.svc = build("docs", "v1", credentials=creds, cache_discovery=False)
@@ -42,30 +49,43 @@ class DocsClient:
     # ---------- 找文件 ----------
 
     def find_memo_doc(self, ticker: str, tree_root_id: str) -> dict | None:
-        """在 Word 樹裡找『{TICKER} 財報』。找不到回 None（由呼叫端決定要不要建）。"""
-        title = f"{ticker} {MEMO_DOC_SUFFIX}"
-        safe = title.replace("'", "\\'")
-        resp = self.drive._retry(
-            lambda: self.drive.svc.files()
-            .list(
-                q=(
-                    f"name = '{safe}' and trashed = false "
-                    f"and mimeType = 'application/vnd.google-apps.document'"
-                ),
-                fields="files(id, name, parents)",
-                pageSize=20,
-                supportsAllDrives=True,
-                includeItemsFromAllDrives=True,
+        """在 Word 樹裡找『{TICKER} 財報』。找不到回 None（由呼叫端決定要不要建）。
+
+        比對不用 Drive 的 `name =` 精確查詢，改抓候選後在本地做「去空白全等」——
+        人工命名的檔案有空白變體（同一份 Doc 裡就有『AMAT  2025Q4』這種雙空格
+        分頁名）。2026-08-14 AMAT 實際踩到：原有『AMAT 財報』名稱比對落空，
+        流程靜靜建了第二份同名文件，memo 寫進新檔，使用者原有的檔案一字未動。
+        """
+        want = _norm_name(f"{ticker} {MEMO_DOC_SUFFIX}").replace(" ", "")
+        safe = ticker.replace("'", "\\'")
+        files, token = [], None
+        while True:
+            resp = self.drive._retry(
+                lambda: self.drive.svc.files()
+                .list(
+                    q=(
+                        f"name contains '{safe}' and trashed = false "
+                        f"and mimeType = 'application/vnd.google-apps.document'"
+                    ),
+                    fields="nextPageToken, files(id, name, parents)",
+                    pageSize=100,
+                    pageToken=token,
+                    supportsAllDrives=True,
+                    includeItemsFromAllDrives=True,
+                )
+                .execute()
             )
-            .execute()
-        )
-        files = resp.get("files", [])
-        if not files:
+            files.extend(resp.get("files", []))
+            token = resp.get("nextPageToken")
+            if not token:
+                break
+        hits = [f for f in files if _norm_name(f["name"]).replace(" ", "") == want]
+        if not hits:
             return None
-        if len(files) > 1:
+        if len(hits) > 1:
             # 同名多份是既有資料問題，不猜 —— 交給呼叫端報錯
-            return {"_ambiguous": [f["id"] for f in files], **files[0]}
-        return files[0]
+            return {"_ambiguous": [f["id"] for f in hits], **hits[0]}
+        return hits[0]
 
     # ---------- 分頁 ----------
 
@@ -108,6 +128,17 @@ class DocsClient:
         ).execute()
         new_id = resp["replies"][0]["addDocumentTab"]["tabProperties"]["tabId"]
         return new_id, True
+
+    def rename_tab(self, doc_id: str, tab_id: str, title: str) -> None:
+        """改分頁標題。用在「採用既有單季檔」時：檔名降格成分頁名後，
+        原本那個預設標題（Tab 1）的分頁要冠回原檔名，季度才認得出來。"""
+        self.svc.documents().batchUpdate(
+            documentId=doc_id,
+            body={"requests": [{"updateDocumentTabProperties": {
+                "tabProperties": {"tabId": tab_id, "title": title},
+                "fields": "title",
+            }}]},
+        ).execute()
 
     def move_tab(self, doc_id: str, tab_id: str, index: int = 0) -> None:
         """把既有分頁搬到指定位置（預設最上面）。

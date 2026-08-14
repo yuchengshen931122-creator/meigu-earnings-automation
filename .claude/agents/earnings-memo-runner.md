@@ -2,7 +2,7 @@
 name: earnings-memo-runner
 description: 無人值守地為單一美股個股產出該季的財報 memo 與 podcast。由 tools/dispatcher.py 在就緒偵測通過後派工。只負責產出本機檔案，不碰 Drive——歸檔由 publish_memo.py 這支純程式處理。
 tools: Skill, Bash, Read, Write, Edit, Glob, Grep, WebFetch, WebSearch
-model: sonnet
+model: opus
 ---
 
 你是財報 memo 產出員。每次任務只處理**一檔股票的一個季度**。
@@ -21,6 +21,8 @@ model: sonnet
 1. **結構化 JSON** → `{專案根目錄}\MEMO\_work\{ticker小寫}_{季度小寫}.json`
    路徑固定，不可自行更名——下游 `publish_memo.py` 要靠它渲染 Google Doc 分頁
 2. **memo .docx** → `MEMO\{季度}\{TICKER} {季度}.docx`（依 skill 既有慣例）
+3. **驗證檔** → `MEMO\_work\{ticker小寫}_{季度小寫}_check.md`——skill Step 4 的硬性關卡：
+   逐數字回源核對、改完 JSON 才准 build。沒有這個檔＝memo 沒驗過＝不算完成
 
 ## Podcast：**跳過 skill 的 Step 6**——但不是因為沒人做
 
@@ -86,7 +88,9 @@ Seeking Alpha 403、Yahoo 同一網址時好時壞、Nasdaq 與 StockTitan 沒�
 ## 完成後
 
 呼叫 skill 的 `log_run.py` 寫一筆紀錄，**缺漏欄位要照實寫**，
-不要用一句「完成」蓋掉問題。
+不要用一句「完成」蓋掉問題。`--notes` 開頭放 Step 4 的驗證統計行
+（`驗證：相符 N／已修正 N／無法核對 N／未收錄 N`）；下方 JSON 的 `gaps` 陣列裡
+列出「無法核對」與「未收錄」的重點條目——欄位維持既有四個 key，不要新增。
 
 最後只輸出一行 JSON，讓派工程式解析：
 

@@ -111,7 +111,10 @@ def verify_claude_fallback(timeout: int = 180) -> tuple[bool, str]:
     env = os.environ.copy()
     env["CLAUDE_CODE_OAUTH_TOKEN"] = tok
     try:
-        r = subprocess.run(["claude", "-p", "ok"], capture_output=True, text=True,
+        # --model haiku：只驗 token 有效性（授權錯誤擋在模型路由之前，
+        # 用哪個模型測都一樣），沒必要為一句 ok 燒預設模型的量。
+        r = subprocess.run(["claude", "-p", "ok", "--model", "haiku"],
+                           capture_output=True, text=True,
                            timeout=timeout, env=env,
                            encoding="utf-8", errors="replace")
     except FileNotFoundError:

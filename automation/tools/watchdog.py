@@ -40,8 +40,13 @@ def check_claude_cli(timeout: int = 120) -> tuple[bool, str]:
     try:
         # env=cli_env()：備援 token 啟用時，這裡量的是「實際派工會用的能力」，
         # 不是主登入的帳面狀態（那是 auth_monitor 的事）。
+        # --model haiku：這裡只驗「登入有效＋端到端能跑」。授權錯誤發生在
+        # 模型路由之前、session limit 也是帳號級跨模型，用哪個模型測結果都一樣；
+        # haiku 便宜一個量級，且 Opus 專屬額度用完時不會誤報成「CLI 掛了」
+        # （配額用完不是失敗，那是 dispatcher 的 QUOTA 分支自己處理的事）。
         from core.claude_cli import cli_env
-        r = subprocess.run([CLI, "-p", "ok"], capture_output=True, text=True,
+        r = subprocess.run([CLI, "-p", "ok", "--model", "haiku"],
+                           capture_output=True, text=True,
                            timeout=timeout, encoding="utf-8", errors="replace",
                            env=cli_env())
     except FileNotFoundError:
